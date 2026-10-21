@@ -13,10 +13,14 @@ create table if not exists public.application_docs (id uuid primary key default 
 create or replace function public.touch_updated_at() returns trigger language plpgsql set search_path = '' as $$ begin new.updated_at = now(); return new; end $$;
 drop trigger if exists hosts_touch on public.hosts;
 create trigger hosts_touch before update on public.hosts for each row execute function public.touch_updated_at();
+create or replace function public.is_owner() returns boolean language sql stable set search_path = '' as $$
+  select lower(coalesce(auth.jwt() ->> 'email', '')) = 'oussema.bouchaala23@gmail.com' $$;
 do $$ declare t text; begin
   foreach t in array array['hosts','sync_log','profile','match_scores','application_docs'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('drop policy if exists "owner all" on public.%I', t);
-    execute format('create policy "owner all" on public.%I for all to authenticated using (true) with check (true)', t);
+    execute format('drop policy if exists "tmp import" on public.%I', t);
+    -- Only the owner's account can read or write; other sign-ups see nothing.
+    execute format('create policy "owner all" on public.%I for all to authenticated using (public.is_owner()) with check (public.is_owner())', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
   end loop; end $$;
